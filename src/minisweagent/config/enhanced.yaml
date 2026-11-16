@@ -1,0 +1,27 @@
+# Overlay an existing run configuration: -c default.yaml -c enhanced.yaml
+agent:
+  agent_class: enhanced
+  cost_limit: 0
+  feedback:
+    enabled: true
+    repeat_failure_threshold: 3
+    test_command_patterns: []
+    max_evidence_chars: 1600
+    max_failures: 20
+    max_attempts: 5
+  retrieval:
+    enabled: true
+    python: python
+    top_k: 5
+    snippet_lines: 24
+    candidate_limit: 40
+    max_file_bytes: 1000000
+  context:
+    context_window: null
+    fallback_context_window: 32768
+    reserved_output_tokens: 4096
+    request_overhead_tokens: 1024
+    compaction_threshold: 0.85
+    keep_recent_turns: 4
+    min_elision_chars: 1000
+    summary_chars: 1200

@@ -1,6 +1,25 @@
 from minisweagent.models.utils.cache_control import set_cache_control
 
 
+def test_signed_thinking_and_multiblock_cache_marks_are_preserved():
+    messages = [
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "thinking", "thinking": "reasoning", "signature": "signed"},
+                {"type": "text", "text": "first", "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": "second"},
+            ],
+        },
+    ]
+    prepared = set_cache_control(messages)
+    assert prepared[0]["content"][0] == messages[0]["content"][0]
+    assert "cache_control" not in prepared[0]["content"][1]
+    assert prepared[0]["content"][2]["cache_control"] == {"type": "ephemeral"}
+    assert messages[0]["content"][1]["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in messages[0]["content"][2]
+
+
 def test_set_cache_control_basic():
     """Test basic cache control functionality with simple input/output."""
     # Input: A messages with multiple messages including user messages

@@ -11,13 +11,13 @@ from minisweagent.exceptions import FormatError
 BASH_TOOL_RESPONSE_API = {
     "type": "function",
     "name": "bash",
-    "description": "Execute a bash command",
+    "description": "执行 bash 命令",
     "parameters": {
         "type": "object",
         "properties": {
             "command": {
                 "type": "string",
-                "description": "The bash command to execute",
+                "description": "要执行的 bash 命令",
             }
         },
         "required": ["command"],

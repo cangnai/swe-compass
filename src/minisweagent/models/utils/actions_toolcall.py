@@ -1,4 +1,5 @@
 """Parse actions & format observations with toolcalls"""
+# 通过工具调用解析动作并格式化观察结果。
 
 import json
 import time
@@ -12,13 +13,13 @@ BASH_TOOL = {
     "type": "function",
     "function": {
         "name": "bash",
-        "description": "Execute a bash command",
+        "description": "执行 bash 命令",
         "parameters": {
             "type": "object",
             "properties": {
                 "command": {
                     "type": "string",
-                    "description": "The bash command to execute",
+                    "description": "要执行的 bash 命令",
                 }
             },
             "required": ["command"],
@@ -36,6 +37,9 @@ def parse_toolcall_actions(
     ``{"finish_reason": ...}`` so a template can distinguish a real format mistake from a
     ``max_tokens`` truncation).
     """
+    # 从响应中解析工具调用。遇到未知工具或无效参数时抛出 FormatError。
+    # template_kwargs 是提供给 format_error_template 的额外模板变量，
+    # 例如 {"finish_reason": ...}，让模板能够区分真正的格式错误和达到 max_tokens 限制导致的截断。
     template_kwargs = template_kwargs or {}
     if not tool_calls:
         raise FormatError(
@@ -85,6 +89,7 @@ def format_toolcall_observation_messages(
     multimodal_regex: str = "",
 ) -> list[dict]:
     """Format execution outputs into tool result messages."""
+    # 将执行输出格式化为工具结果消息。
     not_executed = {"output": "", "returncode": -1, "exception_info": "action was not executed"}
     padded_outputs = outputs + [not_executed] * (len(actions) - len(outputs))
     results = []

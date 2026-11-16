@@ -1,0 +1,7 @@
+# Copy to mini-api.yaml and supply the API key through an environment variable.
+model:
+  model_class: litellm
+  model_name: openai/gpt-4o
+  model_kwargs:
+    temperature: 0
+# For an OpenAI-compatible endpoint, set model.model_kwargs.api_base locally.

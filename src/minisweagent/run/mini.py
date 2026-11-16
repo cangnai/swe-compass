@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 """Run mini-SWE-agent in your local environment. This is the default executable `mini`."""
+# 在本地环境中运行 mini-SWE-agent。这是默认命令 mini 的入口。
 # Read this first: https://mini-swe-agent.com/latest/usage/mini/  (usage)
 
 import os
@@ -23,28 +24,39 @@ DEFAULT_CONFIG_FILE = Path(os.getenv("MSWEA_MINI_CONFIG_PATH", builtin_config_di
 DEFAULT_OUTPUT_FILE = global_config_dir / "last_mini_run.traj.json"
 
 
-_HELP_TEXT = """Run mini-SWE-agent in your local environment.
+_HELP_TEXT = """在本地环境中运行 mini-swe-agent。
 
 [not dim]
-More information about the usage: [bold green]https://mini-swe-agent.com/latest/usage/mini/[/bold green]
+使用说明：[bold green]https://mini-swe-agent.com/latest/usage/mini/[/bold green]
 [/not dim]
 """
+# 在本地环境中运行 mini-SWE-agent。
+# 更多使用说明：https://mini-swe-agent.com/latest/usage/mini/
 
-_CONFIG_SPEC_HELP_TEXT = """Path to config files, filenames, or key-value pairs.
+_CONFIG_SPEC_HELP_TEXT = """配置文件路径、文件名或键值对。
 
-[bold red]IMPORTANT:[/bold red] [red]If you set this option, the default config file will not be used.[/red]
-So you need to explicitly set it e.g., with [bold green]-c mini.yaml <other options>[/bold green]
+[bold red]注意：[/bold red][red]设置此选项后，默认配置文件不会自动加载。[/red]
+请显式指定默认配置，例如：[bold green]-c mini.yaml <其他配置>[/bold green]
 
-Multiple configs will be recursively merged.
+多份配置将按顺序递归合并。
 
-Examples:
+示例：
 
-[bold red]-c model.model_kwargs.temperature=0[/bold red] [red]You forgot to add the default config file! See above.[/red]
+[bold red]-c model.model_kwargs.temperature=0[/bold red] [red]此写法遗漏了默认配置文件。[/red]
 
 [bold green]-c mini.yaml -c model.model_kwargs.temperature=0.5[/bold green]
 
 [bold green]-c swebench.yaml agent.mode=yolo[/bold green]
 """
+# 配置文件路径、文件名或键值对。
+# 重要：设置此选项后，将不再使用默认配置文件。
+# 因此需要显式指定默认配置文件，例如：-c mini.yaml <其他选项>。
+# 多份配置将以递归方式合并。
+# 示例：
+# -c model.model_kwargs.temperature=0
+# 上例遗漏了默认配置文件！请参阅上方说明。
+# -c mini.yaml -c model.model_kwargs.temperature=0.5
+# -c swebench.yaml agent.mode=yolo
 
 console = Console(highlight=False)
 app = typer.Typer(rich_markup_mode="rich")
@@ -53,22 +65,22 @@ app = typer.Typer(rich_markup_mode="rich")
 # fmt: off
 @app.command(help=_HELP_TEXT)
 def main(
-    model_name: str | None = typer.Option(None, "-m", "--model", help="Model to use",),
-    model_class: str | None = typer.Option(None, "--model-class", help="Model class to use (e.g., 'litellm' or 'minisweagent.models.litellm_model.LitellmModel')", rich_help_panel="Advanced"),
-    agent_class: str | None = typer.Option(None, "--agent-class", help="Agent class to use (e.g., 'interactive' or 'minisweagent.agents.interactive.InteractiveAgent')", rich_help_panel="Advanced"),
-    environment_class: str | None = typer.Option(None, "--environment-class", help="Environment class to use (e.g., 'local' or 'minisweagent.environments.local.LocalEnvironment')", rich_help_panel="Advanced"),
-    task: str | None = typer.Option(None, "-t", "--task", help="Task/problem statement", show_default=False),
-    yolo: bool = typer.Option(False, "-y", "--yolo", help="Run without confirmation"),
-    cost_limit: float | None = typer.Option(None, "-l", "--cost-limit", help="Cost limit. Set to 0 to disable."),
+    model_name: str | None = typer.Option(None, "-m", "--model", help="使用的模型名称",),
+    model_class: str | None = typer.Option(None, "--model-class", help="模型类，例如 'litellm' 或完整导入路径", rich_help_panel="高级选项"),
+    agent_class: str | None = typer.Option(None, "--agent-class", help="智能体类，例如 'interactive' 或完整导入路径", rich_help_panel="高级选项"),
+    environment_class: str | None = typer.Option(None, "--environment-class", help="执行环境类，例如 'local' 或完整导入路径", rich_help_panel="高级选项"),
+    task: str | None = typer.Option(None, "-t", "--task", help="任务或问题描述", show_default=False),
+    yolo: bool = typer.Option(False, "-y", "--yolo", help="自动执行命令，不逐步确认"),
+    cost_limit: float | None = typer.Option(None, "-l", "--cost-limit", help="费用上限（美元），设为 0 表示不限制"),
     config_spec: list[str] = typer.Option([str(DEFAULT_CONFIG_FILE)], "-c", "--config", help=_CONFIG_SPEC_HELP_TEXT),
-    output: Path | None = typer.Option(DEFAULT_OUTPUT_FILE, "-o", "--output", help="Output trajectory file"),
-    exit_immediately: bool = typer.Option(False, "--exit-immediately", help="Exit immediately when the agent wants to finish instead of prompting.", rich_help_panel="Advanced"),
+    output: Path | None = typer.Option(DEFAULT_OUTPUT_FILE, "-o", "--output", help="运行记录的保存路径"),
+    exit_immediately: bool = typer.Option(False, "--exit-immediately", help="任务完成后直接退出，不再询问是否继续", rich_help_panel="高级选项"),
 ) -> Any:
     # fmt: on
     configure_if_first_time()
 
     # Build the config from the command line arguments
-    console.print(f"Building agent config from specs: [bold green]{config_spec}[/bold green]")
+    console.print(f"正在合并运行配置：[bold green]{config_spec}[/bold green]")
     configs = [get_config_from_spec(spec) for spec in config_spec]
     configs.append({
         "run": {
@@ -92,16 +104,16 @@ def main(
     config = recursive_merge(*configs)
 
     if (run_task := config.get("run", {}).get("task", UNSET)) is UNSET:
-        console.print("[bold yellow]What do you want to do?")
+        console.print("[bold yellow]请输入你想完成的任务：")
         run_task = _multiline_prompt()
-        console.print("[bold green]Got that, thanks![/bold green]")
+        console.print("[bold green]已收到任务，开始处理。[/bold green]")
 
     model = get_model(config=config.get("model", {}))
     env = get_environment(config.get("environment", {}), default_type="local")
     agent = get_agent(model, env, config.get("agent", {}), default_type="interactive")
     agent.run(run_task)
     if (output_path := config.get("agent", {}).get("output_path")):
-        console.print(f"Saved trajectory to [bold green]'{output_path}'[/bold green]")
+        console.print(f"运行记录已保存到：[bold green]'{output_path}'[/bold green]")
     return agent
 
 

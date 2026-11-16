@@ -1,0 +1,64 @@
+# SWE-bench Verified 100 条嵌套抽样报告
+
+## 方法及复现
+
+从 `{{ meta.input.file }}` 的 {{ meta.input.records }} 条任务中抽取 100 条，**全部保留原有 50 条，新增 50 条**。原始文件、50 条 JSONL、ID、报告、元数据及脚本均不修改。
+
+- 原始数据 SHA-256：`{{ meta.input.sha256 }}`。
+- 种子：`{{ meta.seed }}`；Python：`{{ meta.python_version }}`；抽样前后按 `instance_id` 排序。
+- 难度配额：将本地实际难度数量乘以 100 / 500，先向下取整，再按小数余数从大到小补齐至 100；余数并列按标签升序。不是简单将旧配额翻倍。
+- 沿用 50 条抽样的 `difficulty × repo` 最小费用流分配方法，增加旧样本的层内数量下界：原有任务不可撤回。源节点只发送各难度还需补充的数量，层及项目费用从已保留数量的下一单位开始计算。
+- 在保留原样本及满足难度配额的前提下，首先最小化**最终 100 条**相对原始 500 条 repo 比例的数量平方误差，再最小化联合层数量平方误差。期望均来自完整原始数据，不按剩余 450 条重新计算。
+- 两级目标以整数边际费用保证优先级；相同费用使用固定难度顺序及 repo 字典序处理。用一个 `random.Random({{ meta.seed }})` 实例依次在各层剩余候选中调用 `sample`，选取新增任务。
+- 输出保留选中记录的原始 JSON 行及所有字段（包括 `patch`、`test_patch`），行尾统一为 LF。重新运行时若 ID 清单变化，脚本拒绝覆盖已固定样本。
+
+在仓库根目录复现：
+
+```powershell
+python scripts/sample_verified100.py
+```
+
+可用 `--input`、`--retained-jsonl`、`--retained-ids`、`--output-dir` 指定路径。参数、输入与代码校验和、原有及新增 ID 清单见 `verified100_sampling_meta.json`。相同代码、数据、参数及 Python 环境产生相同产物；报告和元数据不写入运行时间。
+
+## difficulty 对比
+
+| difficulty | 原始500数量 | 原始比例 | 原有50数量 | 新增50数量 | 最终100数量 | 最终比例 | 期望数量 | 比例偏差（百分点） |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+{% for d in difficulties -%}
+| `{{ d }}` | {{ source.difficulty[d] }} | {{ '%.2f'|format(source.difficulty[d] / 5) }}% | {{ retained.difficulty.get(d, 0) }} | {{ added.difficulty.get(d, 0) }} | {{ sample.difficulty.get(d, 0) }} | {{ '%.2f'|format(sample.difficulty.get(d, 0)) }}% | {{ '%.2f'|format(source.difficulty[d] / 5) }} | {{ '%+.2f'|format(sample.difficulty.get(d, 0) - source.difficulty[d] / 5) }} |
+{% endfor -%}
+| **合计** | **500** | **100.00%** | **50** | **50** | **100** | **100.00%** | **100.00** | **0.00** |
+
+`>4 hours` 原始仅 3 条，占 0.60%；100 条按整数取样保留 1 条，占 1.00%，已包含在原有 50 条中，因此本轮不再新增此档任务。
+
+## repo 对比及偏差
+
+| repo | 原始数量 | 原始比例 | 原有50 | 新增50 | 最终100 | 最终比例 | 期望数量 | 数量偏差 | 比例偏差（百分点） |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+{% for repo in repos -%}
+{% set n = source.repo[repo] %}{% set a = sample.repo.get(repo, 0) -%}
+| `{{ repo }}` | {{ n }} | {{ '%.2f'|format(n / 5) }}% | {{ retained.repo.get(repo, 0) }} | {{ added.repo.get(repo, 0) }} | {{ a }} | {{ '%.2f'|format(a) }}% | {{ '%.2f'|format(n / 5) }} | {{ '%+.2f'|format(a - n / 5) }} | {{ '%+.2f'|format(a - n / 5) }} |
+{% endfor -%}
+| **合计** | **500** | **100.00%** | **50** | **50** | **100** | **100.00%** | **100.00** | **0.00** | **0.00** |
+
+最终覆盖 {{ sample.repo|length }} 个项目；最大数量偏差 {{ '%.2f'|format(meta.repo_balance.max_absolute_count_deviation) }} 条，对应 {{ '%.2f'|format(meta.repo_balance.max_absolute_count_deviation) }} 个百分点。repo 数量平方误差总和为 {{ '%.2f'|format(meta.repo_balance.squared_count_error) }}；不限制难度和保留样本时，整数取样的理论下界为 {{ '%.2f'|format(meta.repo_balance.unconstrained_rounding_lower_bound) }}。{% if meta.repo_balance.attains_unconstrained_lower_bound %}两者一致，说明本次全部保留旧样本且满足难度配额，未增加项目比例的最小平方误差。{% else %}两者差异由必须保留旧样本、难度配额和联合层容量限制引起。{% endif %}
+
+未入选项目：{% for repo in repos if not sample.repo.get(repo, 0) %}`{{ repo }}`（原始 {{ source.repo[repo] }} 条、期望 {{ '%.2f'|format(source.repo[repo] / 5) }} 条）{% if not loop.last %}、{% endif %}{% else %}无{% endfor %}。这些偏差来自整数取样及约束；未人为平均项目数量或强制所有项目至少一条。
+
+## difficulty × repo 联合分布
+
+每格为“原始500 → 原有50 + 新增50 = 最终100”，包含零样本的层。
+
+| repo | `<15 min fix` | `15 min - 1 hour` | `1-4 hours` | `>4 hours` |
+|---|---:|---:|---:|---:|
+{% for repo in repos -%}
+| `{{ repo }}` |{% for d in difficulties %} {{ source.joint[d].get(repo, 0) }} → {{ retained.joint[d].get(repo, 0) }} + {{ added.joint[d].get(repo, 0) }} = {{ sample.joint[d].get(repo, 0) }} |{% endfor %}
+{% endfor %}
+## 校验及后续使用
+
+{% for name, passed in meta.validation.items() -%}
+- `{{ name }}`：{{ '通过' if passed else '失败' }}。
+{% endfor %}
+可重复执行脚本，对四个输出文件比较 SHA-256；输入顺序逆转后的重抽结果也须完全相同。元数据同时保存原有 50 条及新增 50 条 ID，可用原有 `verified50_ids.txt` 对 100 条测评结果取子集，直接比较同一组 50 条的表现。
+
+本次仅完成抽样和数据校验，未修改 Agent，未运行模型、Docker 或 SWE-bench 评测。后续 Baseline 与优化版统一使用 `verified100_ids.txt`，保持模型、Token 预算、Step 上限及评测配置一致；完整 JSONL 含参考答案，应在独立环境中隔离 `patch`、`test_patch` 等字段。

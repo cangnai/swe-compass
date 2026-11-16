@@ -7,6 +7,7 @@ from minisweagent import Agent, Environment, Model
 
 _AGENT_MAPPING = {
     "default": "minisweagent.agents.default.DefaultAgent",
+    "enhanced": "minisweagent.agents.enhanced.EnhancedAgent",
     "interactive": "minisweagent.agents.interactive.InteractiveAgent",
 }
 

@@ -1,4 +1,23 @@
 .cursor/rules/_*
+.mini-observe/
+# Local configuration and generated run artifacts
+/mini-api.yaml
+/MINI_START.md
+.env.*
+!.env.example
+/dataset/
+/runs/
+/results/
+/artifacts/
+/final-answer.md
+/workflow.png
+/docs/observability_delivery.md
+/plan/swebench_gold_smoke_and_agent_integration_plan.md
+/comparison.csv
+/comparison.json
+*.db
+*.db-shm
+*.db-wal
 uv.lock
 patch.txt
 exit_statuses*.yaml

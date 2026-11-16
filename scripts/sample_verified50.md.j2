@@ -1,0 +1,69 @@
+# SWE-bench Verified 50 条任务抽样报告
+
+## 抽样方法与复现
+
+- 输入：`{{ meta.input.file }}`，{{ meta.input.records }} 条，{{ meta.input.bytes }} 字节。
+- 输入 SHA-256：`{{ meta.input.sha256 }}`。
+- 固定随机种子：`{{ meta.seed }}`；Python：`{{ meta.python_version }}`。
+- 抽样前按 `instance_id` 升序排序，在 `difficulty × repo` 各层内使用独立的 `random.Random({{ meta.seed }})` 实例依次调用 `sample`；最终输出也按 ID 升序排列。
+- 最小费用流严格满足难度配额及各层容量，首先最小化 repo 实际数量相对原始比例期望数量的平方误差总和，再最小化联合分布的平方误差总和。期望数量均为原始数量 × 50 / 500。
+- 两级目标通过整数费用编码保证优先级；使用固定的难度顺序及 repo 字典序处理并列解。随机数仅用于层内选择，不用于配额分配。
+- 保留选中记录的原始 JSON 行及全部字段，包括 `patch`、`test_patch`，仅统一 JSONL 行尾为 LF。
+- 重复执行会检查已固定的 ID 清单；如计算出的任务不同，脚本报错并拒绝覆盖。不得按后续测评结果更换任务。
+
+在仓库根目录执行（仅依赖项目已有的 `typer`、`jinja2`）：
+
+```powershell
+python scripts/sample_verified50.py
+```
+
+可用 `--input`、`--output-dir` 指定位置；本次正式子集使用默认种子 `42`。代码、模板校验和及完整参数见 `verified50_sampling_meta.json`。相同数据、代码、参数及 Python 环境产生相同结果；报告不写入运行时间，便于逐字节复核。
+
+## difficulty 数量与比例
+
+| difficulty | 原始数量 | 原始比例 | 抽样数量 | 抽样比例 | 配额 |
+|---|---:|---:|---:|---:|---:|
+{% for difficulty, quota in quotas.items() -%}
+| `{{ difficulty }}` | {{ source.difficulty[difficulty] }} | {{ '%.2f'|format(source.difficulty[difficulty] / 5) }}% | {{ sample.difficulty[difficulty] }} | {{ '%.2f'|format(sample.difficulty[difficulty] * 2) }}% | {{ quota }} |
+{% endfor -%}
+| **合计** | **500** | **100.00%** | **50** | **100.00%** | **50** |
+
+`>4 hours` 原始只有 3 条（0.60%），按计划抽取 1 条（2.00%）；其占比上升 1.40 个百分点由固定难度配额决定。
+
+## repo 数量、比例与偏差
+
+偏差 = 实际数量 − 原始数量 × 0.1；百分点差 = 抽样比例 − 原始比例。
+
+| repo | 原始数量 | 原始比例 | 期望数量 | 实际数量 | 抽样比例 | 数量偏差 | 百分点差 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+{% for repo in repos -%}
+{% set original = source.repo[repo] %}{% set actual = sample.repo.get(repo, 0) -%}
+| `{{ repo }}` | {{ original }} | {{ '%.2f'|format(original / 5) }}% | {{ '%.2f'|format(original / 10) }} | {{ actual }} | {{ '%.2f'|format(actual * 2) }}% | {{ '%+.2f'|format(actual - original / 10) }} | {{ '%+.2f'|format(actual * 2 - original / 5) }} |
+{% endfor -%}
+| **合计** | **500** | **100.00%** | **50.00** | **50** | **100.00%** | **0.00** | **0.00** |
+
+小样本必须使用整数数量，原始比例通常无法完全保持。优化优先保证难度，再尽量保持项目比例，不对各项目平均分配，也不强制覆盖所有小项目。下列项目在最优分配中没有入选：{% for repo in repos if not sample.repo.get(repo, 0) %}`{{ repo }}`（原始 {{ source.repo[repo] }} 条，期望 {{ '%.2f'|format(source.repo[repo] / 10) }} 条）{% if not loop.last %}、{% endif %}{% else %}无{% endfor %}。
+
+项目数量的最大绝对偏差为 {{ '%.2f'|format(meta.repo_balance.max_absolute_count_deviation) }} 条，即 {{ '%.2f'|format(meta.repo_balance.max_absolute_count_deviation * 2) }} 个百分点。repo 数量平方误差总和为 {{ '%.2f'|format(meta.repo_balance.squared_count_error) }}；不考虑难度限制、仅按最大余数法取整的理论下界为 {{ '%.2f'|format(meta.repo_balance.unconstrained_rounding_lower_bound) }}。{% if meta.repo_balance.attains_unconstrained_lower_bound %}两者相等，说明本次严格满足难度配额的同时，项目分布也达到了整数取样可实现的最小平方误差，无需额外牺牲项目比例。{% else %}两者的差异来自难度配额及联合层容量限制，按计划优先保证难度。{% endif %}主目标并列时，由联合分布误差及固定遍历顺序确定最终分配。
+
+## difficulty × repo 联合分布
+
+每格为“原始数量 → 抽样数量”，包括零样本的层。
+
+| repo | `<15 min fix` | `15 min - 1 hour` | `1-4 hours` | `>4 hours` | 合计 |
+|---|---:|---:|---:|---:|---:|
+{% for repo in repos -%}
+| `{{ repo }}` |{% for difficulty in quotas %} {{ source.joint[difficulty].get(repo, 0) }} → {{ sample.joint[difficulty].get(repo, 0) }} |{% endfor %} {{ source.repo[repo] }} → {{ sample.repo.get(repo, 0) }} |
+{% endfor -%}
+| **合计** |{% for difficulty in quotas %} **{{ source.difficulty[difficulty] }} → {{ sample.difficulty[difficulty] }}** |{% endfor %} **500 → 50** |
+
+## 校验结果
+
+{% for name, passed in meta.validation.items() -%}
+- `{{ name }}`：{{ '通过' if passed else '失败' }}。
+{% endfor %}
+复现校验重新计算了联合配额，并逆转输入记录顺序后再次选择，结果完全一致。输出 JSONL 直接来自原始记录行，保留全部字段及参考补丁。四个产物不包含运行时间，可重复执行脚本并比较 SHA-256，进行逐字节核验。
+
+## 后续测评约束
+
+本次只抽样和校验，没有运行模型、Docker 或 SWE-bench 评测，也没有修改 Agent 核心逻辑。后续评测统一使用 `verified50_ids.txt`，保持模型、Token 预算、Step 限制及评测配置一致。完整 JSONL 含参考答案，应在独立代码环境中隔离 `patch`、`test_patch` 等字段，避免 Agent 读取答案。

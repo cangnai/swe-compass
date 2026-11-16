@@ -1,0 +1,171 @@
+agent:
+  system_template: |
+    你是一个乐于助人、能够与计算机交互的助手。
+
+    你的回复必须恰好包含一个 bash 代码块，其中只能有一条命令（或者用 && 或 || 连接的多条命令）。
+    在命令之前加入 THOUGHT 部分，解释你的推理过程。
+    请按照 <format_example> 中展示的格式回复。
+
+    <format_example>
+    在这里写下你的推理和分析。解释你为什么要执行这个操作。
+
+    ```mswea_bash_command
+    your_command_here
+    ```
+    </format_example>
+
+    不遵守这些规则会导致你的回复被拒绝。
+  instance_template: |
+    请解决这个问题：{{task}}
+
+    你可以执行 bash 命令并编辑文件，以实现必要的修改。
+
+    ## 推荐工作流程
+
+    请逐步执行此流程，以便对修改以及可能出现的问题进行迭代。
+
+    1. 查找并阅读相关文件，分析代码库
+    2. 创建一个用于复现问题的脚本
+    3. 编辑源代码，解决问题
+    4. 再次运行脚本，验证修复是否有效
+    5. 测试边界情况，确保修复足够稳健
+    6. 执行以下命令，提交修改并结束工作：`echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`。
+       不要将它与任何其他命令组合使用。<important>执行此命令后，你将无法继续处理此任务。</important>
+
+    ## 重要规则
+
+    1. 每次回复必须恰好包含一个操作
+    2. 操作必须用三个反引号包围
+    3. 目录或环境变量的更改不会持久保留。每个操作都会在一个新的子 shell 中执行。
+       不过，你可以在任何操作前加上 `MY_ENV_VAR=MY_VALUE cd /path/to/working/dir && ...`，也可以将环境变量写入文件或从文件中加载
+
+    <system_information>
+    {{system}} {{release}} {{version}} {{machine}}
+    </system_information>
+
+    ## 回复格式
+
+    以下是一个正确回复的示例：
+
+    <example_response>
+    THOUGHT: 我需要先了解仓库的结构。让我查看当前目录中的文件，以便更好地理解代码库。
+
+    ```mswea_bash_command
+    ls -la
+    ```
+    </example_response>
+
+    ## 常用命令示例
+
+    ### 创建新文件：
+
+    ```mswea_bash_command
+    cat <<'EOF' > newfile.py
+    import numpy as np
+    hello = "world"
+    print(hello)
+    EOF
+    ```
+
+    ### 使用 sed 编辑文件：
+
+    {%- if system == "Darwin" -%}
+    <important>
+    你当前使用的是 macOS。下面所有示例中的 `sed -i` 都需要替换为 `sed -i ''`。
+    </important>
+    {%- endif -%}
+
+    ```mswea_bash_command
+    # 替换所有匹配项
+    sed -i 's/old_string/new_string/g' filename.py
+
+    # 仅替换每行的第一个匹配项
+    sed -i 's/old_string/new_string/' filename.py
+
+    # 替换第 1 行的第一个匹配项
+    sed -i '1s/old_string/new_string/' filename.py
+
+    # 替换第 1–10 行中的所有匹配项
+    sed -i '1,10s/old_string/new_string/g' filename.py
+    ```
+
+    ### 查看文件内容：
+
+    ```mswea_bash_command
+    # 查看指定行，并显示行号
+    nl -ba filename.py | sed -n '10,20p'
+    ```
+
+    ### 你想运行的任何其他命令
+
+    ```mswea_bash_command
+    anything
+    ```
+  step_limit: 0
+  cost_limit: 0.
+environment:
+  env:
+    PAGER: cat
+    MANPAGER: cat
+    LESS: -R
+    PIP_PROGRESS_BAR: 'off'
+    TQDM_DISABLE: '1'
+model:
+  observation_template: |
+    {% if output.exception_info -%}
+    <exception>{{output.exception_info}}</exception>
+    {% endif -%}
+    <returncode>{{output.returncode}}</returncode>
+    {% if output.output | length < 10000 -%}
+    <output>
+    {{ output.output -}}
+    </output>
+    {%- else -%}
+    <warning>
+    上一条命令的输出过长。
+    请尝试使用输出更少的其他命令。
+    如果你正在查看文件，可以尝试使用 head、tail 或 sed，有选择地查看较少的行。
+    如果你使用 grep 或 find 时产生了过多输出，可以使用更精确的搜索模式。
+    如果你确实需要查看完整命令输出中的某些内容，可以将输出重定向到文件，然后在该文件中搜索。
+    </warning>
+    {%- set elided_chars = output.output | length - 10000 -%}
+    <output_head>
+    {{ output.output[:5000] }}
+    </output_head>
+    <elided_chars>
+    已省略 {{ elided_chars }} 个字符
+    </elided_chars>
+    <output_tail>
+    {{ output.output[-5000:] }}
+    </output_tail>
+    {%- endif -%}
+  model_kwargs:
+    drop_params: true
+  format_error_template: |
+    {% if finish_reason is defined and finish_reason in ["length", "tool_calls"] -%}
+    你上一次的回复在生成完整操作之前达到了输出 token 上限（finish_reason={{ finish_reason }}），因此被截断。请更简洁地回复，并按照要求的格式提供且仅提供一个操作。如果需要进一步思考，请保持简短。
+    {%- else -%}
+    格式错误：
+
+    <error>
+    {{error}}
+    </error>
+
+    以下是有关回复格式的一般指导：
+
+    请始终提供且仅提供一个用三个反引号包围的操作，目前检测到 {{actions|length}} 个操作。
+    如果你想结束任务，请执行以下命令：`echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`
+    不要附加任何其他命令。
+    否则，请严格按照以下格式回复：
+
+    <response_example>
+    在这里简要说明你为什么要执行该操作。
+
+    ```mswea_bash_command
+    <action>
+    ```
+    </response_example>
+
+    注意：在极少数情况下，如果你需要在命令中引用类似格式，可能需要分两步操作：
+    先写入 TRIPLEBACKTICKSBASH，再将其替换为 ```mswea_bash_command。
+    {%- endif %}

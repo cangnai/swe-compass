@@ -18,8 +18,8 @@ def _get_content_text(entry: dict) -> str | None:
 
 def _clear_cache_control(entry: dict) -> None:
     if isinstance(entry["content"], list):
-        assert len(entry["content"]) == 1, "Expected single message in content"
-        entry["content"][0].pop("cache_control", None)
+        for block in entry["content"]:
+            block.pop("cache_control", None)
     # Note: entry["content"] can be None for assistant messages with only tool_use
     entry.pop("cache_control", None)
 
@@ -39,10 +39,14 @@ def _set_cache_control(entry: dict) -> None:
             }
         ]
     else:
-        entry["content"][0]["cache_control"] = {"type": "ephemeral"}
+        blocks = [b for b in entry["content"] if b.get("type") not in {"thinking", "redacted_thinking"}]
+        if not blocks:
+            return
+        blocks[-1]["cache_control"] = {"type": "ephemeral"}
     if entry["role"] == "tool":
         # Workaround for weird bug
-        entry["content"][0].pop("cache_control", None)
+        for block in entry["content"]:
+            block.pop("cache_control", None)
         entry["cache_control"] = {"type": "ephemeral"}
 
 

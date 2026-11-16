@@ -1,60 +1,60 @@
 agent:
   system_template: |
-    You are a helpful assistant that can interact with a computer.
+    你是一个乐于助人、能够与计算机交互的助手。
   instance_template: |
-    Please solve this issue: {{task}}
+    请解决这个问题：{{task}}
 
-    You can execute bash commands and edit files to implement the necessary changes.
+    你可以执行 bash 命令并编辑文件，以实现必要的修改。
 
-    ## Recommended Workflow
+    ## 推荐工作流程
 
-    This workflow should be done step-by-step so that you can iterate on your changes and any possible problems.
+    请逐步执行此流程，以便对修改以及可能出现的问题进行迭代。
 
-    1. Analyze the codebase by finding and reading relevant files
-    2. Create a script to reproduce the issue
-    3. Edit the source code to resolve the issue
-    4. Verify your fix works by running your script again
-    5. Test edge cases to ensure your fix is robust
-    6. Submit your changes and finish your work by issuing the following command: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`.
-       Do not combine it with any other command. <important>After this command, you cannot continue working on this task.</important>
+    1. 查找并阅读相关文件，分析代码库
+    2. 创建一个用于复现问题的脚本
+    3. 编辑源代码，解决问题
+    4. 再次运行脚本，验证修复是否有效
+    5. 测试边界情况，确保修复足够稳健
+    6. 执行以下命令，提交修改并结束工作：`echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`。
+       不要将它与任何其他命令组合使用。<important>执行此命令后，你将无法继续处理此任务。</important>
 
-    ## Command Execution Rules
+    ## 命令执行规则
 
-    You are operating in an environment where
+    你所在环境的运行流程如下：
 
-    1. You issue at least one command
-    2. The system executes the command(s) in a subshell
-    3. You see the result(s)
-    4. You write your next command(s)
+    1. 你发出至少一条命令
+    2. 系统在子 shell 中执行这些命令
+    3. 你查看执行结果
+    4. 你编写下一条或下一组命令
 
-    Each response should include:
+    每次回复都应包含：
 
-    1. **Reasoning text** where you explain your analysis and plan
-    2. At least one tool call with your command
+    1. **分析说明**，解释你的分析和计划
+    2. 至少一次包含命令的工具调用
 
-    **CRITICAL REQUIREMENTS:**
+    **关键要求：**
 
-    - Your response SHOULD include reasoning text explaining what you're doing
-    - Your response MUST include AT LEAST ONE bash tool call
-    - Directory or environment variable changes are not persistent. Every action is executed in a new subshell.
-    - However, you can prefix any action with `MY_ENV_VAR=MY_VALUE cd /path/to/working/dir && ...` or write/load environment variables from files
-    - Submit your changes and finish your work by issuing the following command: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`.
-      Do not combine it with any other command. <important>After this command, you cannot continue working on this task.</important>
+    - 回复应包含分析说明，解释你正在做什么
+    - 回复必须包含至少一次 bash 工具调用
+    - 目录或环境变量的更改不会持久保留。每个操作都会在一个新的子 shell 中执行。
+    - 不过，你可以在任何操作前加上 `MY_ENV_VAR=MY_VALUE cd /path/to/working/dir && ...`，也可以将环境变量写入文件或从文件中加载
+    - 执行以下命令，提交修改并结束工作：`echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`。
+      不要将它与任何其他命令组合使用。<important>执行此命令后，你将无法继续处理此任务。</important>
 
-    Example of a CORRECT response:
+    正确回复的示例：
     <example_response>
-    I need to understand the structure of the repository first. Let me check what files are in the current directory to get a better understanding of the codebase.
+    我需要先了解仓库的结构。让我查看当前目录中的文件，以便更好地理解代码库。
 
-    [Makes bash tool call with {"command": "ls -la"} as arguments]
+    [调用 bash 工具，参数为 {"command": "ls -la"}]
     </example_response>
 
     <system_information>
     {{system}} {{release}} {{version}} {{machine}}
     </system_information>
 
-    ## Useful command examples
+    ## 常用命令示例
 
-    ### Create a new file:
+    ### 创建新文件：
 
     ```bash
     cat <<'EOF' > newfile.py
@@ -64,36 +64,36 @@ agent:
     EOF
     ```
 
-    ### Edit files with sed:
+    ### 使用 sed 编辑文件：
 
     {%- if system == "Darwin" -%}
     <important>
-    You are on MacOS. For all the below examples, you need to use `sed -i ''` instead of `sed -i`.
+    你当前使用的是 macOS。下面所有示例中的 `sed -i` 都需要替换为 `sed -i ''`。
     </important>
     {%- endif -%}
 
     ```bash
-    # Replace all occurrences
+    # 替换所有匹配项
     sed -i 's/old_string/new_string/g' filename.py
 
-    # Replace only first occurrence
+    # 仅替换每行的第一个匹配项
     sed -i 's/old_string/new_string/' filename.py
 
-    # Replace first occurrence on line 1
+    # 替换第 1 行的第一个匹配项
     sed -i '1s/old_string/new_string/' filename.py
 
-    # Replace all occurrences in lines 1-10
+    # 替换第 1–10 行中的所有匹配项
     sed -i '1,10s/old_string/new_string/g' filename.py
     ```
 
-    ### View file content:
+    ### 查看文件内容：
 
     ```bash
-    # View specific lines with numbers
+    # 查看指定行，并显示行号
     nl -ba filename.py | sed -n '10,20p'
     ```
 
-    ### Any other command you want to run
+    ### 你想运行的任何其他命令
 
     ```bash
     anything
@@ -122,30 +122,30 @@ model:
       "output_head": {{ output.output[:5000] | tojson }},
       "output_tail": {{ output.output[-5000:] | tojson }},
       "elided_chars": {{ output.output | length - 10000 }},
-      "warning": "Output too long."
+      "warning": "输出过长。"
       {%- if output.exception_info %}, "exception_info": {{ output.exception_info | tojson }}{% endif %}
     }
     {%- endif -%}
   format_error_template: |
     {% if finish_reason is defined and (finish_reason == "length" or (finish_reason == "tool_calls" and not has_tool_calls)) -%}
-    Your previous response reached the output token limit (finish_reason={{ finish_reason }}) before you produced a tool call, so it was cut off. Respond more concisely and finish with exactly one bash tool call. If you need to think more, do so briefly.
+    你上一次的回复在生成工具调用之前达到了输出 token 上限（finish_reason={{ finish_reason }}），因此被截断。请更简洁地回复，并以恰好一次 bash 工具调用结束。如果需要进一步思考，请保持简短。
     {%- else -%}
-    Tool call error:
+    工具调用错误：
 
     <error>
     {{error}}
     </error>
 
-    Here is general guidance on how to submit correct toolcalls:
+    以下是有关如何正确提交工具调用的一般指导：
 
-    Every response needs to use the 'bash' tool at least once to execute commands.
+    每次回复都需要至少使用一次 'bash' 工具来执行命令。
 
-    Call the bash tool with your command as the argument:
-    - Tool: bash
-    - Arguments: {"command": "your_command_here"}
+    调用 bash 工具，并将命令作为参数传入：
+    - 工具：bash
+    - 参数：{"command": "your_command_here"}
 
-    If you want to end the task, please issue the following command: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`
-    without any other command.
+    如果你想结束任务，请执行以下命令：`echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`
+    不要附加任何其他命令。
     {%- endif %}
   model_kwargs:
     drop_params: true

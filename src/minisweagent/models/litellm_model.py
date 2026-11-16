@@ -27,23 +27,31 @@ logger = logging.getLogger("litellm_model")
 class LitellmModelConfig(BaseModel):
     model_name: str
     """Model name. Highly recommended to include the provider in the model name, e.g., `anthropic/claude-sonnet-4-5-20250929`."""
+    # 模型名称。强烈建议包含提供商名称，例如 `anthropic/claude-sonnet-4-5-20250929`。
     model_kwargs: dict[str, Any] = {}
     """Additional arguments passed to the API."""
+    # 传递给 API 的额外参数。
     litellm_model_registry: Path | str | None = os.getenv("LITELLM_MODEL_REGISTRY_PATH")
     """Model registry for cost tracking and model metadata. See the local model guide (https://mini-swe-agent.com/latest/models/local_models/) for more details."""
+    # 用于费用跟踪和模型元数据的模型注册表。详见上方链接中的本地模型指南。
     set_cache_control: Literal["default_end"] | None = None
     """Set explicit cache control markers, for example for Anthropic models"""
+    # 设置显式缓存控制标记，例如用于 Anthropic 模型。
     cost_tracking: Literal["default", "ignore_errors"] = os.getenv("MSWEA_COST_TRACKING", "default")
     """Cost tracking mode for this model. Can be "default" or "ignore_errors" (ignore errors/missing cost info)"""
+    # 此模型的费用跟踪模式。可选值为 "default" 或 "ignore_errors"（忽略错误或费用信息缺失）。
     format_error_template: str = "{{ error }}"
     """Template used when the LM's output is not in the expected format."""
+    # 语言模型输出不符合预期格式时使用的模板。
     observation_template: str = (
         "{% if output.exception_info %}<exception>{{output.exception_info}}</exception>\n{% endif %}"
         "<returncode>{{output.returncode}}</returncode>\n<output>\n{{output.output}}</output>"
     )
     """Template used to render the observation after executing an action."""
+    # 执行动作后，用于渲染观察结果的模板。
     multimodal_regex: str = ""
     """Regex to extract multimodal content. Empty string disables multimodal processing."""
+    # 用于提取多模态内容的正则表达式。空字符串表示禁用多模态处理。
 
 
 class LitellmModel:
@@ -85,6 +93,7 @@ class LitellmModel:
         cost_output = self._calculate_cost(response)
         GLOBAL_MODEL_STATS.add(cost_output["cost"])
         # Note: all model.query() implementations must persist the response and cost on FormatError.
+        # 注意：所有 model.query() 实现都必须在发生 FormatError 时保存响应和费用。
         try:
             actions = self._parse_actions(response)
         except FormatError as e:
@@ -94,6 +103,8 @@ class LitellmModel:
             except Exception:
                 # model_dump failed (e.g. unserializable object); fall back to repr
                 # so the spec contract ("response MUST be persisted") holds unconditionally.
+                # model_dump 失败时（例如对象无法序列化），改用 repr，
+                # 确保始终满足“必须保存响应”的规范要求。
                 e.messages[0]["extra"]["response"] = repr(response)
             raise
         message = response.choices[0].message.model_dump()
@@ -127,6 +138,7 @@ class LitellmModel:
 
     def _parse_actions(self, response) -> list[dict]:
         """Parse tool calls from the response. Raises FormatError if unknown tool."""
+        # 解析响应中的工具调用。遇到未知工具时抛出 FormatError。
         tool_calls = response.choices[0].message.tool_calls or []
         return parse_toolcall_actions(
             tool_calls,
@@ -141,6 +153,7 @@ class LitellmModel:
         self, message: dict, outputs: list[dict], template_vars: dict | None = None
     ) -> list[dict]:
         """Format execution outputs into tool result messages."""
+        # 将执行输出格式化为工具结果消息。
         actions = message.get("extra", {}).get("actions", [])
         return format_toolcall_observation_messages(
             actions=actions,

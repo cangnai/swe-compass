@@ -13,8 +13,8 @@ def _multiline_prompt() -> str:
     return _multiline_prompt_session.prompt(
         "",
         bottom_toolbar=HTML(
-            "Submit message: <b fg='yellow' bg='black'>Esc, then Enter</b> | "
-            "Navigate history: <b fg='yellow' bg='black'>Arrow Up/Down</b> | "
-            "Search history: <b fg='yellow' bg='black'>Ctrl+R</b>"
+            "提交消息：<b fg='yellow' bg='black'>先按 Esc，再按回车</b> | "
+            "浏览历史：<b fg='yellow' bg='black'>上/下方向键</b> | "
+            "搜索历史：<b fg='yellow' bg='black'>Ctrl+R</b>"
         ),
     )

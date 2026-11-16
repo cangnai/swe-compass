@@ -29,9 +29,9 @@ global_config_file = Path(global_config_dir) / ".env"
 
 if not os.getenv("MSWEA_SILENT_STARTUP"):
     Console().print(
-        f"This is [bold green]mini-swe-agent[/bold green] version [bold green]{__version__}[/bold green].\n"
-        f"Check the [bold red]v2 migration guide[/] at [bold red]https://klieret.short.gy/mini-v2-migration[/]\n"
-        f"Loading global config from [bold green]'{global_config_file}'[/bold green]",
+        f"[bold green]mini-swe-agent[/bold green] 版本：[bold green]{__version__}[/bold green]\n"
+        f"v2 迁移指南：[bold red]https://klieret.short.gy/mini-v2-migration[/]\n"
+        f"正在加载全局配置：[bold green]'{global_config_file}'[/bold green]",
     )
 dotenv.load_dotenv(dotenv_path=global_config_file)
 

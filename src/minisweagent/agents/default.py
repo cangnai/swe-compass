@@ -146,15 +146,26 @@ class DefaultAgent:
                 }
             )
         self.n_calls += 1
-        message = self.model.query(self.messages)
+        message = self.model.query(self.get_model_messages())
         self.cost += message.get("extra", {}).get("cost", 0.0)
         self.add_messages(message)
         return message
 
+    def get_model_messages(self) -> list[dict]:
+        """Build the model-visible history without changing the trajectory."""
+        return self.messages
+
     def execute_actions(self, message: dict) -> list[dict]:
         """Execute actions in message, add observation messages, return them."""
-        outputs = [self.env.execute(action) for action in message.get("extra", {}).get("actions", [])]
+        outputs = [
+            self.process_action_output(action, self.env.execute(action))
+            for action in message.get("extra", {}).get("actions", [])
+        ]
         return self.add_messages(*self.model.format_observation_messages(message, outputs, self.get_template_vars()))
+
+    def process_action_output(self, action: dict, output: dict) -> dict:
+        """Inspect raw execution results before observation formatting."""
+        return output
 
     def serialize(self, *extra_dicts) -> dict:
         """Serialize agent state to a json-compatible nested dictionary for saving."""
@@ -186,5 +197,5 @@ class DefaultAgent:
         data = self.serialize(*extra_dicts)
         if path:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(data, indent=2))
+            path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         return data

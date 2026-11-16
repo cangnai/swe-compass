@@ -38,13 +38,22 @@ class LitellmResponseModel(LitellmModel):
         return result
 
     def _query(self, messages: list[dict[str, str]], **kwargs):
+        model_kwargs = self.config.model_kwargs | kwargs
         try:
-            return litellm.responses(
+            response = litellm.responses(
                 model=self.config.model_name,
                 input=messages,
                 tools=[BASH_TOOL_RESPONSE_API],
-                **(self.config.model_kwargs | kwargs),
+                **model_kwargs,
             )
+            if not model_kwargs.get("stream"):
+                return response
+            for event in response:
+                if event.type in {"response.completed", "response.incomplete"}:
+                    return event.response
+                if event.type == "response.failed":
+                    raise RuntimeError(f"Responses API failed: {event.response.error}")
+            raise RuntimeError("Responses API stream ended without a final response.")
         except litellm.exceptions.AuthenticationError as e:
             e.message += " You can permanently set your API key with `mini-extra config set KEY VALUE`."
             raise e

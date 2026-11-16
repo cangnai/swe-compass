@@ -1,3 +1,4 @@
+import json
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
@@ -315,7 +316,7 @@ def _test_interruption_helper(
 def test_interruption_handling_with_message(model_factory):
     """Test that interruption with user message is handled properly."""
     factory, config = model_factory
-    agent, interrupt_message = _test_interruption_helper(factory, config, "User interrupted", "Interrupted by user")
+    agent, interrupt_message = _test_interruption_helper(factory, config, "User interrupted", "用户中断了运行")
 
     # Additional verification specific to this test
     assert "User interrupted" in get_text(interrupt_message)
@@ -324,7 +325,7 @@ def test_interruption_handling_with_message(model_factory):
 def test_interruption_handling_empty_message(model_factory):
     """Test that interruption with empty input is handled properly."""
     factory, config = model_factory
-    _test_interruption_helper(factory, config, "", "Temporary interruption caught")
+    _test_interruption_helper(factory, config, "", "已处理临时中断")
 
 
 def test_multiple_confirmations_and_commands(model_factory):
@@ -509,7 +510,7 @@ def test_confirmation_mode_switch_to_human_with_rejection(model_factory):
         assert info["submission"] == "human command after rejection\n"
         assert agent.config.mode == "human"
         # Should have rejection message
-        rejection_messages = [msg for msg in agent.messages if "Switching to human mode" in get_text(msg)]
+        rejection_messages = [msg for msg in agent.messages if "正在切换到人工操作模式" in get_text(msg)]
         assert len(rejection_messages) == 1
 
 
@@ -588,7 +589,7 @@ def test_mode_switch_during_keyboard_interrupt(model_factory):
     assert info["submission"] == "recovered after mode switch\n"
     assert agent.config.mode == "yolo"
     # Should have interruption message
-    interrupt_messages = [msg for msg in agent.messages if "Temporary interruption caught" in get_text(msg)]
+    interrupt_messages = [msg for msg in agent.messages if "已处理临时中断" in get_text(msg)]
     assert len(interrupt_messages) == 1
 
 
@@ -728,7 +729,7 @@ def test_help_command_from_different_contexts(model_factory):
             assert info["exit_status"] == "Submitted"
             assert info["submission"] == "help works\n"
             # Verify help was shown
-            help_calls = [call for call in mock_print.call_args_list if "Current mode: " in str(call)]
+            help_calls = [call for call in mock_print.call_args_list if "当前模式：" in str(call)]
             assert len(help_calls) > 0
 
 
@@ -756,7 +757,7 @@ def test_help_command_from_human_mode(model_factory):
             assert info["exit_status"] == "Submitted"
             assert info["submission"] == "help in human mode\n"
             # Verify help was shown
-            help_calls = [call for call in mock_print.call_args_list if "Current mode: " in str(call)]
+            help_calls = [call for call in mock_print.call_args_list if "当前模式：" in str(call)]
             assert len(help_calls) > 0
 
 
@@ -981,7 +982,7 @@ def test_continue_after_completion_with_new_task(model_factory):
         assert agent.n_calls == 2
         # Should have the new task message in conversation
         new_task_messages = [
-            msg for msg in agent.messages if "The user added a new task: Create a new file" in get_text(msg)
+            msg for msg in agent.messages if "用户添加了新任务：Create a new file" in get_text(msg)
         ]
         assert len(new_task_messages) == 1
 
@@ -1013,7 +1014,7 @@ def test_continue_after_completion_without_new_task(model_factory):
         assert info["submission"] == "original task completed\n"
         assert agent.n_calls == 1
         # Should not have any new task messages
-        new_task_messages = [msg for msg in agent.messages if "The user added a new task" in get_text(msg)]
+        new_task_messages = [msg for msg in agent.messages if "用户添加了新任务" in get_text(msg)]
         assert len(new_task_messages) == 0
 
 
@@ -1047,7 +1048,7 @@ def test_continue_after_completion_multiple_cycles(model_factory):
         assert info["submission"] == "third completed\n"
         assert agent.n_calls == 3
         # Should have both new task messages
-        new_task_messages = [msg for msg in agent.messages if "The user added a new task" in get_text(msg)]
+        new_task_messages = [msg for msg in agent.messages if "用户添加了新任务" in get_text(msg)]
         assert len(new_task_messages) == 2
         assert "Second task" in get_text(new_task_messages[0])
         assert "Third task" in get_text(new_task_messages[1])
@@ -1254,3 +1255,29 @@ def test_submission_enter_quits(model_factory):
     assert info["exit_status"] == "Submitted"
     assert info["submission"] == "completed\n"
     assert agent.n_calls == 1
+
+
+def test_submission_records_successful_partial_outputs(model_factory, tmp_path):
+    factory, config = model_factory
+    agent = InteractiveAgent(
+        model=factory(
+            [
+                (
+                    "Finishing",
+                    [
+                        {"command": "echo before"},
+                        {"command": "printf '%s\\n' COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT completed"},
+                        {"command": "touch after"},
+                    ],
+                )
+            ]
+        ),
+        env=LocalEnvironment(cwd=str(tmp_path)),
+        **(config | {"mode": "yolo", "confirm_exit": False, "output_path": tmp_path / "run.traj.json"}),
+    )
+    assert agent.run("Complete the task")["submission"] == "completed\n"
+    assert agent.messages[3]["extra"]["raw_output"] == "before\n"
+    assert agent.messages[4]["extra"]["returncode"] == 0
+    assert agent.messages[4]["extra"]["raw_output"] == "completed\n"
+    assert not (tmp_path / "after").exists()
+    assert json.loads((tmp_path / "run.traj.json").read_text())["info"]["submission"] == "completed\n"

@@ -110,7 +110,7 @@ class TestConfigSetup:
             # Should not contain the API key since no value was provided
             assert "OPENAI_API_KEY" not in content
             mock_print.assert_any_call(
-                "[bold red]API key setup not completed.[/bold red] Totally fine if you have your keys as environment variables."
+                "[bold red]尚未填写 API 密钥。[/bold red]如果已通过环境变量设置密钥，可以继续使用。"
             )
 
 
@@ -141,8 +141,8 @@ class TestConfigSet:
             set(None, None)
 
             assert mock_prompt.call_count == 2
-            mock_prompt.assert_any_call("Enter the key to set: ")
-            mock_prompt.assert_any_call("Enter the value for TEST_KEY: ")
+            mock_prompt.assert_any_call("请输入要设置的变量名：")
+            mock_prompt.assert_any_call("请输入 TEST_KEY 的值：")
 
             content = config_file.read_text()
             assert "TEST_KEY='test_value'" in content
@@ -159,7 +159,7 @@ class TestConfigSet:
 
             set("PROVIDED_KEY", None)
 
-            mock_prompt.assert_called_once_with("Enter the value for PROVIDED_KEY: ")
+            mock_prompt.assert_called_once_with("请输入 PROVIDED_KEY 的值：")
 
             content = config_file.read_text()
             assert "PROVIDED_KEY='prompted_value'" in content
@@ -176,7 +176,7 @@ class TestConfigSet:
 
             set(None, "PROVIDED_VALUE")
 
-            mock_prompt.assert_called_once_with("Enter the key to set: ")
+            mock_prompt.assert_called_once_with("请输入要设置的变量名：")
 
             content = config_file.read_text()
             assert "prompted_key='PROVIDED_VALUE'" in content
@@ -275,7 +275,7 @@ class TestConfigUnset:
 
             unset(None)
 
-            mock_prompt.assert_called_once_with("Enter the key to unset: ")
+            mock_prompt.assert_called_once_with("请输入要删除的变量名：")
 
             content = config_file.read_text()
             assert "TEST_KEY" not in content

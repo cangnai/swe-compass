@@ -19,9 +19,18 @@ def _format_observation(content: str) -> str | None:
     try:
         data = json.loads(content)
         if isinstance(data, dict) and "returncode" in data:
+            labels = {
+                "returncode": "返回码",
+                "output": "输出",
+                "output_head": "输出开头",
+                "output_tail": "输出结尾",
+                "elided_chars": "省略字符数",
+                "warning": "提示",
+                "exception_info": "异常信息",
+            }
             lines = []
             for key, value in data.items():
-                lines.append(f"<{key}>")
+                lines.append(f"<{labels.get(key, key)}>")
                 lines.append(str(value))
             return "\n".join(lines)
         return content
