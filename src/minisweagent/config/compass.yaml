@@ -1,0 +1,9 @@
+# Overlay a complete base configuration: -c mini.yaml -c compass.yaml
+agent:
+  agent_class: enhanced
+  step_limit: 100
+  cost_limit: 3
+  retrieval:
+    enabled: true
+  feedback:
+    enabled: true

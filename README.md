@@ -1,98 +1,31 @@
-﻿# mini-SWE-agent 增强版
+﻿# SWE-Compass
 
-基于 [SWE-agent/mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) 的中文增强版本。保留原项目简洁的「模型决策 → Bash 执行 → 结果反馈」循环，在同一条执行链路中加入上下文工程、仓库级检索、反馈驱动修复，以及独立的运行观测与评测工具。
+**面向代码修复的轻量级软件工程 Agent。**
 
-本项目希望让长任务更容易保持上下文、定位代码、利用测试反馈，并让行为与验证结果可以追溯。增强能力通过配置启用，原有 `DefaultAgent`、交互入口、模型适配器和执行环境仍可单独使用。
+SWE-Compass 从问题描述出发，检索相关代码、执行命令、修改文件，再依据测试结果继续修复。它将任务记忆、代码定位和失败反馈接入同一个执行循环，并记录模型决策、工具调用与验证证据，方便复盘一次修复是如何完成的。
 
-## 原版如何执行任务
+Compass 意为「指南针」：用仓库证据确定位置，用任务记忆保持方向，用测试反馈校正下一步行动。
 
-mini-SWE-agent 由三个核心组件组成：Agent 决定控制流程，Model 负责模型请求和动作解析，Environment 执行命令。运行入口读取配置后，选择三个组件并调用 `agent.run(task)`。
+## 核心能力
 
-```mermaid
-flowchart TD
-    A[运行入口：加载配置与任务] --> B[创建 Model / Environment / Agent]
-    B --> C[渲染系统提示与任务提示]
-    C --> D[检查步数、费用与运行时间限制]
-    D --> E[Model.query：请求模型并解析动作]
-    E --> F[Environment.execute：执行 Bash 命令]
-    F --> G[格式化 Observation 并追加历史]
-    G --> H[保存运行轨迹]
-    H --> I{是否出现退出消息？}
-    I -->|否| D
-    I -->|是| J[返回 exit_status 与 submission]
-```
-
-正常步骤中，`step()` 调用 `query()`，再调用 `execute_actions()`；模型适配器把回复转换为动作，环境返回命令输出与退出码。环境识别提交标记后通过 `Submitted` 中断循环；限制或连续格式错误也会产生对应结束状态。轨迹在每轮的 `finally` 中保存，意外异常记录后继续抛出。
-
-原版把消息历史直接传给模型。文本代码块、Chat Completions 工具调用和 Responses API 的具体消息格式由各模型适配器处理，Agent 围绕统一的动作与 Observation 接口工作。每条命令使用独立子进程，前一条命令中的 `cd` 不会改变下一条命令的工作目录。
-
-## 增强版如何接入原流程
-
-`EnhancedAgent` 继承 `DefaultAgent`，在任务初始化、模型请求前和命令执行后三个位置加入增强处理。循环、模型接口、Bash 执行环境、提交机制和轨迹格式继续复用。
-
-```mermaid
-flowchart TD
-    A[开始新的任务] --> B[重置任务记忆、失败记忆与计数]
-    B --> C[在任务环境部署仓库检索脚本]
-    C --> D[渲染提示并补充检索命令说明]
-    D --> E[检查原有运行限制]
-    E --> F[Context Manager 构造本轮模型可见历史]
-    F --> G[Model.query：分析并生成 Bash 动作]
-    G --> H[Environment.execute]
-    H --> I[Feedback Manager 解析测试与执行反馈]
-    I --> J[追加 Observation，更新共享 Task State]
-    J --> K[保存完整轨迹与增强状态]
-    K --> L{任务是否结束？}
-    L -->|否| E
-    L -->|是| M[提交结果与结束状态]
-    G -. 按需检索 .-> R[文件定位 → 符号定位 → 排序 → 代码片段]
-    R -. 作为普通 Bash 结果返回 .-> I
-    I -. 重复失败或回归触发 .-> S[反思提示供下一轮模型处理]
-    S -. 写入任务记忆 .-> F
-```
-
-| 环节 | 原有方式 | 增强方式 |
+| 能力 | 解决的问题 | 实现方式 |
 | --- | --- | --- |
-| 模型输入 | 直接使用消息历史 | 构造独立视图，清理重复旧结果，按窗口预算压缩并补充任务记忆 |
-| 代码定位 | 模型自行使用 Bash 查找 | 增加按需调用的路径、关键词、堆栈与 Python AST 检索 |
-| 测试反馈 | 输出作为 Observation 返回 | 同时提取失败节点、异常、断言和范围，追踪当前任务的失败变化 |
-| 重复失败 | 模型自行从历史发现 | 事件触发式提示重新分析，由下一轮正常模型调用决定行动 |
-| 轨迹保存 | 保存消息、配置和模型统计 | 额外保存上下文检查点、检索部署信息、反馈与失败记忆 |
-| 运行分析 | Inspector 浏览轨迹 | 可选 SQLite 采集、中文看板、诊断、独立验证及运行对比 |
+| 任务记忆与上下文管理 | 历史越来越长，关键约束和测试结果容易淹没在日志中 | 维护结构化任务状态，清理重复旧结果，按窗口预算生成可追溯检查点 |
+| 仓库级代码检索 | 仅凭问题描述难以快速定位相关文件与符号 | 结合路径、关键词、堆栈、测试引用与 Python AST，返回带行号和命中原因的代码片段 |
+| 反馈驱动修复 | 重复尝试同一方案，却没有重新审视失败原因 | 提取测试失败证据，跟踪失败变化，在重复失败或回归时提示重新分析 |
+| 运行观测与独立评测 | 只能看到最终答复，难以判断执行过程与修复结果 | 保存轨迹与调用链，展示资源用量、诊断和运行对比，并单独执行验证命令 |
 
-### 1. 上下文工程
+项目基于 [mini-SWE-agent](https://github.com/SWE-agent/mini-swe-agent) 构建，沿用它清晰的 Agent / Model / Environment 分工。代码检索仍通过 Bash 调用，上下文处理与反馈分析接入原有循环，观测和评测可按需使用。
 
-`ContextManager` 为当前任务维护结构化 `Task State`，记录约束、定位证据、修改意图、测试结果、假设和下一步。模型可见视图可以替换重复的旧读取/搜索/测试结果，并在接近窗口预算时把较早的完整交互转换为可追溯检查点。系统提示、原始任务、近期交互和未完成工具调用受到保护。
+## 快速开始
 
-压缩使用确定性摘录，不额外调用模型。原始消息保留在完整轨迹中，工具调用与结果按配对处理。窗口估算使用保守的 UTF-8 字节数，不能当作实际 API Token 用量。详见 [上下文工程](docs/context_engineering.md)。
+需要 **Python 3.10+、Git** 和可用的模型接口。Agent 推荐在 Linux、macOS 或 Windows 的 WSL / Ubuntu 中运行；以下命令使用 Bash。SWE-bench 任务还需要容器环境。
 
-### 2. 仓库级检索
-
-`RepoSearch` 在实际任务环境部署只依赖 Python 标准库的脚本。模型通过原有 Bash 工具按需调用，检索器结合路径、模块名、关键词、测试引用、符号定义与 traceback 行号排序，返回带路径、行号、符号和命中原因的有限片段。
-
-Python 使用 AST 定位；其他语言或解析失败时使用文本定位。每次读取当前工作树，没有持久索引。结果作为候选证据写入任务记忆，排序分数不代表根因置信度。详见 [仓库级检索](docs/repository_retrieval.md)。
-
-### 3. 反馈驱动修复
-
-`FeedbackManager` 在命令执行后、Observation 格式化前分析真实结果，区分普通命令非零退出、测试失败、明确通过、不确定结果和执行器异常。失败记忆按测试节点、异常及稳定特征归并，保留测试范围与来源；其他范围的成功不会清除旧失败。
-
-连续同组失败、通过后回归或结果与成功声明冲突时，系统提示重新分析，交给下一轮模型处理。该机制不会启动另一个模型或自动测试循环，模型假设仍标记为未验证。详见 [反馈驱动修复](docs/feedback_guided_repair.md)。
-
-### 4. 运行观测与独立评测
-
-可选观测层通过 Agent、Model 和 Environment 包装器记录真实调用，提供轨迹、监控、失败分析、任务与运行对比四类页面。历史轨迹也可以导入。Token、费用和耗时缺失时保留未知状态。
-
-**`Submitted` 只代表 Agent 提交结束，不能说明问题已经解决。** 独立评测根据保留工作区中的验证命令给出 `passed`、`failed`、`not_evaluated` 或 `evaluation_error`。详见 [观测、诊断与评测](docs/observability_usage.md)。
-
-## 安装与快速开始
-
-需要 Python 3.10+ 和 Git。建议在 Linux、macOS 或 Windows 的 WSL / Ubuntu 中运行 Agent；以下示例使用 Bash。SWE-bench 还需要容器环境。Windows 可以单独运行观测看板。
-
-增强功能需要从本仓库源码安装：
+### 安装
 
 ```bash
-git clone https://github.com/cangnai/mini-swe-agent-enhanced.git
-cd mini-swe-agent-enhanced
+git clone https://github.com/cangnai/swe-compass.git
+cd swe-compass
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[observability]'
@@ -100,63 +33,132 @@ cp mini-api.example.yaml mini-api.yaml
 export OPENAI_API_KEY='你的 API Key'
 ```
 
-`mini-api.example.yaml` 是不含密钥的模型配置示例。按实际服务修改本地 `mini-api.yaml`；API Key 通过环境变量或 `mini-extra config` 设置。兼容 OpenAI 的自建接口可配置 `model.model_kwargs.api_base`；Responses API 适配器可选择 `model_class: litellm_response`。模型能力与参数支持取决于实际服务。
+在本地 `mini-api.yaml` 中选择模型。示例默认使用 `openai/gpt-4o`；兼容 OpenAI 的服务可设置 `model.model_kwargs.api_base`，Responses API 可选择 `model_class: litellm_response`。API Key 通过环境变量或 `mini-extra config` 管理，本地配置不会提交到仓库。
 
-### 中文交互模式
+### 运行修复任务
 
-默认 `mini` 使用中文提示和 `InteractiveAgent`，逐步确认命令。以下命令显式指定目标仓库，便于从安装目录启动：
+在安装目录执行下面的命令，将目标路径替换为需要处理的代码仓库：
+
+```bash
+mini -c mini.yaml -c compass.yaml -c mini-api.yaml \
+  -c environment.cwd=/absolute/path/to/target-repo \
+  -t '请复现并修复这个项目的问题，运行相关测试，并说明修改内容和验证结果。' \
+  -o runs/compass.traj.json
+```
+
+`compass.yaml` 启用任务记忆、仓库检索和测试反馈，默认最多调用模型 100 步、费用上限 3 美元。此模式自动执行模型生成的命令。费用与步数在下一次请求前检查，单次请求仍可能使费用超过设定值。
+
+需要逐条确认命令时，使用交互模式：
 
 ```bash
 mini -c mini.yaml -c mini-api.yaml \
   -c environment.cwd=/absolute/path/to/target-repo \
-  -t '请复现并修复当前项目的问题，运行相关测试并总结验证结果。' \
+  -t '请检查项目并修复问题。' \
   -o runs/interactive.traj.json --exit-immediately
 ```
 
-不指定 `environment.cwd` 时，处理启动命令所在的目录。省略 `-t` 可交互输入任务；`-y` 允许自动执行，`--exit-immediately` 仅控制任务提交后是否继续询问新任务。
+交互模式使用 `InteractiveAgent`，不包含 Compass 配置启用的三项处理。省略 `-t` 可在终端输入任务；`--exit-immediately` 控制提交后是否继续询问新任务。未设置 `environment.cwd` 时，任务在启动命令所在的目录执行。
 
-### 启用三项增强
+为保留现有调用方式，命令行入口仍使用 `mini`、`mini-extra`、`mini-observe`，Python 导入路径仍为 `minisweagent`。
 
-```bash
-mini -c mini.zh-CN.yaml -c enhanced.yaml -c mini-api.yaml \
-  -c environment.cwd=/absolute/path/to/target-repo \
-  -c agent.cost_limit=3 -c agent.step_limit=100 \
-  -t '请定位并复现问题，依据测试反馈修复代码，验证后提交结果。' \
-  -o runs/enhanced.traj.json
+## 执行流程
+
+### 基础循环：模型决策、命令执行、结果反馈
+
+原始 mini-SWE-agent 的运行入口选择 Model、Environment 和 Agent，随后调用 `agent.run(task)`。每一步由模型生成动作、环境执行命令，再把结果作为 Observation 加入消息历史。
+
+```mermaid
+flowchart TD
+    A[读取配置与任务] --> B[创建 Model / Environment / Agent]
+    B --> C[渲染系统提示与任务提示]
+    C --> D[检查步数、费用与运行时间限制]
+    D --> E[模型生成动作]
+    E --> F[环境执行 Bash 命令]
+    F --> G[格式化结果并追加消息历史]
+    G --> H[保存运行轨迹]
+    H --> I{是否结束？}
+    I -->|继续| D
+    I -->|提交或达到限制| J[返回结束状态与提交内容]
 ```
 
-`enhanced.yaml` 是叠加配置，需先加载完整基础配置。它选择的 `EnhancedAgent` 直接继承 `DefaultAgent`，自动执行命令，没有 `InteractiveAgent` 的逐步确认功能。普通 `mini` 启动不会自动启用三项增强。
+在实现中，`step()` 依次调用 `query()` 和 `execute_actions()`。模型适配器负责消息协议与动作解析，环境负责执行和识别提交标记。轨迹在每轮保存，意外异常记录后继续抛出。每条命令使用独立子进程，上一条命令中的 `cd` 不会改变下一条命令的工作目录。
 
-多份 `-c` 按顺序递归合并，后面的同名值覆盖前面的值；显式传入 `-c` 后，默认配置不会自动补上。`-m` 等专用命令行参数还会覆盖配置文件中的对应字段。
+### Compass 循环：让记忆、检索与反馈参与下一步决策
 
-### 常用增强配置
+SWE-Compass 在基础循环的三个位置加入处理：任务开始时初始化状态与检索工具，模型请求前构造上下文，命令执行后整理测试反馈。三部分共享当前任务的状态，仍由同一个 Agent 循环推进修复。
 
-| 配置项 | `enhanced.yaml` 的值 | 含义 |
-| --- | --- | --- |
-| `agent.cost_limit` | `0` | 不限制费用；上面的示例显式设为 3 美元 |
-| `agent.context.context_window` | `null` | 优先使用模型本地元数据，未知时回退到 32768 |
-| `agent.context.reserved_output_tokens` | `4096` | 为模型输出预留空间 |
-| `agent.context.compaction_threshold` | `0.85` | 达到可用输入预算比例时尝试压缩 |
-| `agent.context.keep_recent_turns` | `4` | 保护最近完整交互 |
-| `agent.retrieval.enabled` | `true` | 启用任务环境中的仓库检索 |
-| `agent.retrieval.top_k` | `5` | 每次返回的检索片段数量 |
-| `agent.feedback.enabled` | `true` | 启用测试反馈与失败记忆 |
-| `agent.feedback.repeat_failure_threshold` | `3` | 连续同组失败触发重新分析的阈值 |
+```mermaid
+flowchart TD
+    A[开始任务：初始化任务与失败记忆] --> B[在任务环境部署检索脚本]
+    B --> C[检查运行限制]
+    C --> D[构造上下文：近期交互、检查点与任务记忆]
+    D --> E[模型分析并生成 Bash 动作]
+    E --> F[环境执行：检索、读取、编辑或测试]
+    F --> G[解析执行结果与测试反馈]
+    G --> H[更新定位证据、修改记录与失败状态]
+    H --> I[保存原始轨迹与任务状态]
+    I --> J{是否结束？}
+    J -->|继续| C
+    J -->|结束| K[返回提交结果]
+    G -. 重复失败或回归 .-> R[形成重新分析提示]
+    R -. 供下一轮模型处理 .-> D
+```
 
-可分别设置 `agent.retrieval.enabled=false` 或 `agent.feedback.enabled=false`，对比各增强模块。完整参数与边界条件见对应模块文档。
+检索由模型按需调用；反馈分析不会额外启动模型或自动测试循环。任务结束后，还可以通过观测工具查看过程，并使用独立验证命令判断修复结果。
 
-## 查看运行过程
+## 模块设计
 
-将前面的轨迹导入看板：
+### 上下文管理：保留任务状态，控制历史体积
+
+`ContextManager` 维护当前任务的约束、文件与符号证据、修改意图、测试结果、假设和下一步。模型可见历史与原始轨迹分开：重复旧结果可以被清理，较早的完整交互可以转为摘录检查点，完整消息仍保留用于追溯。
+
+系统提示、原始任务、近期交互和未完成工具调用受到保护。检查点采用确定性摘录，不额外调用模型；窗口预算使用保守估算，与实际 API Token 用量分别记录。
+
+[阅读上下文管理设计 →](docs/context_engineering.md)
+
+### 仓库检索：从问题线索定位到代码片段
+
+`RepoSearch` 在任务实际运行的环境中部署标准库脚本。它组合路径、模块名、关键词、测试引用和 traceback 信号，对候选文件排序；Python 文件进一步使用 AST 定位类、函数和方法，其他语言或解析失败时使用文本定位。
+
+结果附带路径、行号、符号与命中原因。每次检索读取当前工作树，修改后可以重新查询。候选证据进入任务记忆，供后续阅读和验证使用。
+
+[阅读仓库检索设计 →](docs/repository_retrieval.md)
+
+### 测试反馈：区分失败事实与修复假设
+
+`FeedbackManager` 在命令执行后分析真实输出，区分普通非零退出、测试失败、明确通过、不确定结果和执行器异常。失败记忆保留测试范围、异常特征和来源，同一范围的后续结果用于更新状态。
+
+连续同组失败、通过后回归，或结果与成功声明冲突时，系统提示模型重新检查假设。不同范围的测试通过不会清除无关失败，模型对根因的判断仍需要证据验证。
+
+[阅读反馈驱动修复设计 →](docs/feedback_guided_repair.md)
+
+### 观测与评测：从执行记录到可核查结果
+
+观测层通过包装器采集真实模型和工具调用，使用 SQLite 保存任务、运行、调用、事件和评测记录。看板提供四个视角：
+
+| 页面 | 查看内容 |
+| --- | --- |
+| 执行轨迹 | 每一步的模型决策、Action、Observation 与关联证据 |
+| 运行监控 | 调用链、耗时、已记录 Token 与费用 |
+| 失败分析 | 执行异常、人工干预与疑似无进展行为的规则诊断 |
+| 任务与对比 | 任务运行、独立验证、配置差异与多次运行对比 |
+
+**Agent 提交结束与测试通过分别记录。** `Submitted` 表示执行流程已经提交；独立验证返回 `passed`、`failed`、`not_evaluated` 或 `evaluation_error`。缺失的 Token、费用与耗时保持未知。
+
+[阅读观测与评测使用说明 →](docs/observability_usage.md)
+
+## 查看一次运行
+
+导入前面保存的轨迹并打开看板：
 
 ```bash
-mini-observe import runs/enhanced.traj.json --db .mini-observe/traces.db
+mini-observe import runs/compass.traj.json --db .mini-observe/traces.db
 mini-observe serve --db .mini-observe/traces.db
 ```
 
-打开 <http://127.0.0.1:8501>。历史轨迹能展示多少耗时与资源信息，取决于原文件实际记录了哪些数据。需要采集完整运行时调用链时，按[使用文档](docs/observability_usage.md)登记任务，并通过 `mini-observe run` 启动。
+浏览器访问 <http://127.0.0.1:8501>。历史导入展示原文件已有的信息；需要采集运行时调用链时，可登记任务并使用 `mini-observe run` 启动，具体操作见[使用说明](docs/observability_usage.md)。
 
-无需 API 的离线演示：
+也可以先体验无需 API 的离线演示：
 
 ```bash
 python -m pip install pytest
@@ -164,45 +166,72 @@ mini-observe demo
 mini-observe serve --db .mini-observe/demo/traces.db
 ```
 
-演示用预编写模型响应执行真实命令、代码修改和测试，用于验证平台链路，不代表在线模型修复能力。
+演示使用预编写的模型响应执行真实命令、修改与测试，展示从执行到评测的完整链路，不作为在线模型能力实验。
 
-## SWE-bench 与抽样工具
+## 配置
 
-容器环境准备好后，可沿用原 benchmark 入口叠加增强配置：
+`compass.yaml` 是叠加配置，需要与完整基础配置一起使用。多个 `-c` 按顺序递归合并，后面的同名值覆盖前面的值；显式传入 `-c` 后，默认配置不会自动补上。`-m` 等专用参数还会覆盖配置文件中的对应字段。
+
+| 配置项 | 默认值 | 用途 |
+| --- | --- | --- |
+| `agent.step_limit` | `100` | 模型调用步数上限 |
+| `agent.cost_limit` | `3` | 费用上限，单位美元；`0` 为不限制 |
+| `agent.context.context_window` | `null` | 优先使用模型本地元数据，未知时回退到 32768 |
+| `agent.context.reserved_output_tokens` | `4096` | 为模型输出预留空间 |
+| `agent.context.compaction_threshold` | `0.85` | 达到可用输入预算比例时尝试压缩 |
+| `agent.context.keep_recent_turns` | `4` | 保护最近完整交互 |
+| `agent.retrieval.enabled` | `true` | 部署仓库检索工具 |
+| `agent.retrieval.top_k` | `5` | 每次返回的检索片段数 |
+| `agent.feedback.enabled` | `true` | 分析测试反馈并维护失败记忆 |
+| `agent.feedback.repeat_failure_threshold` | `3` | 连续同组失败触发重新分析的阈值 |
+
+例如，为较大的上下文窗口指定预算：
+
+```bash
+mini -c mini.yaml -c compass.yaml -c mini-api.yaml \
+  -c agent.context.context_window=128000 \
+  -c environment.cwd=/absolute/path/to/target-repo \
+  -t '请定位并修复问题。' -o runs/compass.traj.json
+```
+
+可以分别设置 `agent.retrieval.enabled=false` 或 `agent.feedback.enabled=false`，观察模块对同一任务的影响。其余参数与处理边界见模块文档。
+
+## SWE-bench 与实验
+
+准备好容器环境后，可使用原 benchmark 入口运行 Compass 配置：
 
 ```bash
 mini-extra swebench --subset verified --split test \
-  -c swebench.yaml -c enhanced.yaml -c mini-api.yaml \
-  -c agent.cost_limit=3 -o runs/swebench-enhanced
+  -c swebench.yaml -c compass.yaml -c mini-api.yaml \
+  -o runs/swebench-compass
 ```
 
-批量入口按所选 Agent 创建进度包装，保留预测文件和轨迹格式。基准模型、费用限制、数据范围与评测方式应在实验中显式记录；本 README 不宣称未经对照验证的修复率提升。
+预测文件、进度显示和轨迹格式沿用原入口。比较不同配置时，应固定任务、初始版本和评测方式，并记录模型、预算与运行结果；项目的实际修复能力需要通过对照实验评估。
 
-`scripts/sample_verified50.py` 与 `scripts/sample_verified100.py` 提供固定种子的分层抽样及嵌套扩样，Jinja 模板在同目录。数据源 JSONL 需自行准备，包含脚本要求的 `instance_id`、`repo`、`difficulty`、`patch`、`test_patch` 等字段。默认读取 `dataset/swebench_verified_500.jsonl`，再依次运行：
+仓库还提供固定种子的分层抽样与嵌套扩样脚本。自行准备 `dataset/swebench_verified_500.jsonl`，包含脚本要求的 `instance_id`、`repo`、`difficulty`、`patch`、`test_patch` 等字段后，依次执行：
 
 ```bash
 python scripts/sample_verified50.py
 python scripts/sample_verified100.py
 ```
 
-数据、抽样结果、ID 清单与报告均在本地生成，本仓库不上传这些产物。依赖数据的抽样集成测试在数据未准备时跳过，算法测试仍可运行。参考答案字段用于抽样完整性检查，不应直接作为 Agent 的问题输入。
+数据、抽样结果、ID 清单和报告在本地生成，不提交到仓库。缺少数据时，相关集成测试跳过，抽样算法测试仍可运行。参考答案字段用于抽样完整性检查，不应作为 Agent 的问题输入。
 
-## 目录结构
+## 项目结构
 
 ```text
 src/minisweagent/
-├── __init__.py             # Agent / Model / Environment 协议
-├── agents/                 # 原版、交互与增强 Agent
-├── environments/           # 本地、Docker 等执行环境
-├── models/                 # 模型接口与消息/动作协议适配
-├── optimization/           # 上下文、任务状态、检索、反馈修复
-├── observability/          # 采集、存储、诊断、评测与看板
-├── config/                 # 内置配置及中文提示
-└── run/                    # mini、SWE-bench、observe 等入口
-scripts/                    # 数据抽样脚本与 Jinja 模板
-tests/                      # 核心流程与增强模块测试
-docs/                       # 原项目文档与新增模块说明
-plan/                       # 设计与实现计划
+├── agents/          # 基础循环、交互模式与任务处理
+├── environments/    # 本地、Docker 等执行环境
+├── models/          # 模型接口、消息协议与动作解析
+├── optimization/    # 上下文、任务状态、检索与测试反馈
+├── observability/   # 采集、存储、诊断、评测与看板
+├── config/          # 基础配置与 compass.yaml
+└── run/             # 任务、基准运行与观测入口
+scripts/             # 抽样脚本与 Jinja 模板
+tests/               # 核心流程、模块与集成验证
+docs/                # 使用说明与设计细节
+plan/                # 实施计划
 ```
 
 ## 开发与验证
@@ -213,10 +242,12 @@ python -m pytest tests/agents tests/observability tests/models/test_cache_contro
 python -m pytest tests/test_verified50_sampling.py tests/test_verified100_sampling.py -q
 ```
 
-容器集成测试需要对应环境与镜像，真实 API 测试需要显式启用。原项目用法可参考 [mini-SWE-agent 官方文档](https://mini-swe-agent.com/latest/)。
+容器测试依赖对应运行环境和镜像，真实 API 测试需要显式启用。命令与模型接口的通用用法可参考 [mini-SWE-agent 官方文档](https://mini-swe-agent.com/latest/)。
 
-`.gitignore` 排除本地 API 配置、环境变量文件、运行输出、数据库、临时报告、数据集及抽样产物。上游已有的 `tests/test_data` 轨迹属于测试夹具，保留以支持解析和兼容性测试。
+本地 API 配置、环境变量文件、运行轨迹、数据库、工作区、数据集和临时报告均通过 `.gitignore` 排除。上游已有的 `tests/test_data` 轨迹作为测试夹具保留。
 
-## 来源与许可
+## 致谢与许可
 
-原项目由 mini-SWE-agent / SWE-agent 团队开发，本仓库在其基础上扩展；原作者信息与 [MIT 许可证](LICENSE.md) 保留。使用或研究时请注明原项目来源，相关论文为 [SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering](https://arxiv.org/abs/2405.15793)。
+SWE-Compass 基于 [SWE-agent/mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent)，感谢原作者提供简洁、可扩展的执行框架。本仓库保留原作者信息与 [MIT 许可证](LICENSE.md)。
+
+相关论文：[SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering](https://arxiv.org/abs/2405.15793)。
